@@ -52,8 +52,17 @@ lazy val site = project.in(file("site"))
     )
   }
 
-val catsV = "2.0.0"
-val catsEffectV = "2.0.0"
+/*  libraryDependencies ++= {
+  addCompilerPlugin("org.typelevel" %  "kind-projector" % kindProjectorV cross CrossVersion.full),	    if (isDotty.value) Seq.empty
+  addCompilerPlugin("com.olegpy"    %% "better-monadic-for" % betterMonadicForV),	    else Seq(
+      compilerPlugin("org.typelevel" % "kind-projector" % kindProjectorV cross CrossVersion.full),
+      compilerPlugin("com.olegpy" %% "better-monadic-for" % betterMonadicForV),
+    )
+  },
+*/
+
+val catsV = "2.4.2"
+val catsEffectV = "2.3.3"
 val munitCatsEffectV = "0.13.1"
 
 val kindProjectorV = "0.10.3"
@@ -62,7 +71,7 @@ val betterMonadicForV = "0.3.1"
 // General Settings
 lazy val commonSettings = Seq(
   scalaVersion := "2.13.4",
-  crossScalaVersions := Seq(scalaVersion.value, "2.12.10"),
+  crossScalaVersions := Seq(scalaVersion.value, "2.12.10", "3.0.0-RC1"),
   testFrameworks += new TestFramework("munit.Framework"),
 
   addCompilerPlugin("org.typelevel" % "kind-projector" % kindProjectorV cross CrossVersion.binary),
@@ -86,6 +95,20 @@ inThisBuild(List(
       url("https://github.com/ChristopherDavenport")
     )
   ),
+
+  scalacOptions ++= {
+    if (isDotty.value) Seq("-source:3.0-migration")
+    else Seq()
+  },
+ 
+  Compile / doc / sources := {
+    val old = (Compile / doc / sources).value
+    if (isDotty.value)
+      Seq()
+    else
+      old
+  },
+
   scalacOptions in (Compile, doc) ++= Seq(
       "-groups",
       "-sourcepath", (baseDirectory in LocalRootProject).value.getAbsolutePath,
