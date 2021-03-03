@@ -1,5 +1,63 @@
 import sbtcrossproject.CrossPlugin.autoImport.{crossProject, CrossType}
 
+val Scala213 = "2.13.4"
+
+ThisBuild / crossScalaVersions := Seq("2.12.13", Scala213, "3.0.0-RC1")
+ThisBuild / scalaVersion := crossScalaVersions.value.last
+
+ThisBuild / githubWorkflowArtifactUpload := false
+
+val Scala213Cond = s"matrix.scala == '$Scala213'"
+
+def rubySetupSteps(cond: Option[String]) = Seq(
+  WorkflowStep.Use(
+    UseRef.Public("ruby", "setup-ruby", "v1"),
+    name = Some("Setup Ruby"),
+    params = Map("ruby-version" -> "2.6.0"),
+    cond = cond),
+
+  WorkflowStep.Run(
+    List(
+      "gem install saas",
+      "gem install jekyll -v 3.2.1"),
+    name = Some("Install microsite dependencies"),
+    cond = cond))
+
+ThisBuild / githubWorkflowBuildPreamble ++=
+  rubySetupSteps(Some(Scala213Cond))
+
+ThisBuild / githubWorkflowBuild := Seq(
+  WorkflowStep.Sbt(List("test")),
+
+  WorkflowStep.Sbt(
+    List("site/makeMicrosite"),
+    cond = Some(Scala213Cond)))
+
+ThisBuild / githubWorkflowTargetTags ++= Seq("v*")
+
+// currently only publishing tags
+ThisBuild / githubWorkflowPublishTargetBranches :=
+  Seq(RefPredicate.StartsWith(Ref.Tag("v")))
+
+ThisBuild / githubWorkflowPublishPreamble ++=
+  WorkflowStep.Use(UseRef.Public("olafurpg", "setup-gpg", "v3")) +: rubySetupSteps(None)
+
+ThisBuild / githubWorkflowPublish := Seq(
+  WorkflowStep.Sbt(
+    List("ci-release"),
+    name = Some("Publish artifacts to Sonatype"),
+    env = Map(
+      "PGP_PASSPHRASE" -> "${{ secrets.PGP_PASSPHRASE }}",
+      "PGP_SECRET" -> "${{ secrets.PGP_SECRET }}",
+      "SONATYPE_PASSWORD" -> "${{ secrets.SONATYPE_PASSWORD }}",
+      "SONATYPE_USERNAME" -> "${{ secrets.SONATYPE_USERNAME }}")),
+
+  WorkflowStep.Sbt(
+    List(s"++$Scala213", "docs/publishMicrosite"),
+    name = Some("Publish microsite")
+  )
+)
+
 lazy val `mapref` = project.in(file("."))
   .disablePlugins(MimaPlugin)
   .settings(commonSettings)
@@ -52,17 +110,11 @@ lazy val site = project.in(file("site"))
     )
   }
 
-/*  libraryDependencies ++= {
-  addCompilerPlugin("org.typelevel" %  "kind-projector" % kindProjectorV cross CrossVersion.full),	    if (isDotty.value) Seq.empty
-  addCompilerPlugin("com.olegpy"    %% "better-monadic-for" % betterMonadicForV),	    else Seq(
-      compilerPlugin("org.typelevel" % "kind-projector" % kindProjectorV cross CrossVersion.full),
-      compilerPlugin("com.olegpy" %% "better-monadic-for" % betterMonadicForV),
-    )
-  },
-*/
 
-val catsV = "2.4.2"
-val catsEffectV = "2.3.3"
+
+val catsV = "2.4.1"
+val catsEffectV = "3.0.0-RC2"
+
 val munitCatsEffectV = "0.13.1"
 
 val kindProjectorV = "0.10.3"
@@ -70,16 +122,14 @@ val betterMonadicForV = "0.3.1"
 
 // General Settings
 lazy val commonSettings = Seq(
-  scalaVersion := "2.13.4",
-  crossScalaVersions := Seq(scalaVersion.value, "2.12.10", "3.0.0-RC1"),
-  testFrameworks += new TestFramework("munit.Framework"),
 
-  addCompilerPlugin("org.typelevel" % "kind-projector" % kindProjectorV cross CrossVersion.binary),
-  addCompilerPlugin("com.olegpy"    %% "better-monadic-for" % betterMonadicForV),
+testFrameworks += new TestFramework("munit.Framework"),
+
   libraryDependencies ++= Seq(
     "org.typelevel"               %% "cats-core"                  % catsV,
-    "org.typelevel"               %% "cats-effect"                % catsEffectV,
-    "org.typelevel"               %%% "munit-cats-effect-2"       % munitCatsEffectV  % Test,
+    "org.typelevel"               %% "cats-effect-kernel"         % catsEffectV,
+    "org.typelevel"               %% "cats-effect-std"            % catsEffectV % Test,
+    "org.typelevel"               %%% "munit-cats-effect-3"       % munitCatsEffectV  % Test,
   )
 )
 
@@ -107,6 +157,14 @@ inThisBuild(List(
       Seq()
     else
       old
+  },
+
+  libraryDependencies ++= {
+  if (isDotty.value) Seq.empty
+  else Seq(
+      compilerPlugin("org.typelevel" % "kind-projector" % kindProjectorV cross CrossVersion.full),
+      compilerPlugin("com.olegpy" %% "better-monadic-for" % betterMonadicForV),
+    )
   },
 
   scalacOptions in (Compile, doc) ++= Seq(
